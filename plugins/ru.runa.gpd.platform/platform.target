@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<?pde version="3.8"?><target name="platform" sequenceNumber="8">
+<?pde version="3.8"?><target name="platform" sequenceNumber="10">
 <locations>
 <location includeAllPlatforms="false" includeConfigurePhase="true" includeMode="planner" includeSource="true" type="InstallableUnit">
 <unit id="org.eclipse.equinox.sdk.feature.group" version="3.13.3.v20180301-1149"/>
@@ -8,8 +8,8 @@
 <repository location="http://download.eclipse.org/releases/oxygen"/>
 </location>
 <location includeAllPlatforms="false" includeConfigurePhase="true" includeMode="planner" includeSource="true" type="InstallableUnit">
-<unit id="org.eclipse.babel.nls_eclipse_ru.feature.group" version="4.7.0.v20180404020001"/>
-<repository location="http://build.eclipse.org/technology/babel/update-site/N20180404-0200/oxygen"/>
+<unit id="org.eclipse.babel.nls_eclipse_ru.feature.group" version="4.7.0.v20180514022218"/>
+<repository location="http://build.eclipse.org/technology/babel/update-site/I20180514-0200/oxygen/"/>
 </location>
 </locations>
 </target>
