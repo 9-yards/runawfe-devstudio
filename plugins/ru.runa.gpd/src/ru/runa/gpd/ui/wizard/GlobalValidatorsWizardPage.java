@@ -1,10 +1,14 @@
 package ru.runa.gpd.ui.wizard;
 
+import java.beans.PropertyChangeEvent;
+import java.beans.PropertyChangeListener;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.function.Consumer;
 
 import org.eclipse.jface.viewers.ArrayContentProvider;
 import org.eclipse.jface.viewers.IStructuredSelection;
@@ -16,6 +20,7 @@ import org.eclipse.jface.wizard.WizardPage;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.custom.StyledText;
 import org.eclipse.swt.events.ModifyEvent;
+import org.eclipse.swt.events.ModifyListener;
 import org.eclipse.swt.events.SelectionAdapter;
 import org.eclipse.swt.events.SelectionEvent;
 import org.eclipse.swt.layout.GridData;
@@ -31,7 +36,12 @@ import org.eclipse.swt.widgets.TableColumn;
 import org.eclipse.swt.widgets.Text;
 import org.eclipse.ui.forms.events.HyperlinkEvent;
 
+import com.google.common.base.Strings;
+import com.google.common.collect.Lists;
+import com.google.common.collect.Maps;
+
 import ru.runa.gpd.Localization;
+import ru.runa.gpd.PropertyNames;
 import ru.runa.gpd.extension.decision.GroovyTypeSupport;
 import ru.runa.gpd.extension.decision.GroovyValidationModel;
 import ru.runa.gpd.extension.decision.GroovyValidationModel.Expr;
@@ -59,28 +69,23 @@ import ru.runa.gpd.validation.ValidatorDefinition;
 import ru.runa.gpd.validation.ValidatorDefinitionRegistry;
 import ru.runa.wfe.execution.dto.WfProcess;
 
-import com.google.common.base.Strings;
-import com.google.common.collect.Lists;
-import com.google.common.collect.Maps;
-
-public class GlobalValidatorsWizardPage extends WizardPage {
+public class GlobalValidatorsWizardPage extends WizardPage implements PropertyChangeListener {
     private final FormNode formNode;
     private TableViewer validatorsTableViewer;
     private Button deleteButton;
     private ValidatorInfoControl infoGroup;
     private List<ValidatorConfig> validatorConfigs;
-    private final List<Variable> variables;
-    private final List<String> variableNames;
-    private final List<String> contextVariableNames;
+    private List<Variable> variables;
+    private List<String> variableNames;
+    private List<String> contextVariableNames;
     private final ValidatorDefinition globalDefinition = ValidatorDefinitionRegistry.getGlobalDefinition();
+    private boolean dirty;
+    private Consumer<Boolean> dirtyCallback;
 
     protected GlobalValidatorsWizardPage(FormNode formNode) {
         super("Global validators");
         this.formNode = formNode;
-        this.variables = formNode.getProcessDefinition().getVariables(true, true);
-        this.variableNames = VariableUtils.getVariableNamesForScripting(variables);
-        this.contextVariableNames = Lists.newArrayList(variableNames);
-        this.contextVariableNames.add(WfProcess.SELECTED_TRANSITION_KEY);
+        updateVariableNames();
         setTitle(Localization.getString("ValidatorWizardPage.globalpage.title"));
         setDescription(Localization.getString("ValidatorWizardPage.globalpage.description"));
     }
@@ -149,6 +154,7 @@ public class GlobalValidatorsWizardPage extends WizardPage {
                 validatorConfigs.add(config);
                 validatorsTableViewer.refresh(true);
                 validatorsTableViewer.setSelection(new StructuredSelection(config));
+                setDirty(true);
             }
         });
 
@@ -162,6 +168,7 @@ public class GlobalValidatorsWizardPage extends WizardPage {
                 }
                 validatorConfigs.remove(config);
                 validatorsTableViewer.refresh(true);
+                setDirty(true);
             }
         });
         deleteButton.setEnabled(false);
@@ -174,6 +181,8 @@ public class GlobalValidatorsWizardPage extends WizardPage {
 
         mainComposite.pack(true);
         setControl(mainComposite);
+
+        formNode.getProcessDefinition().addPropertyChangeListener(this);
     }
 
     protected Button addButton(Composite parent, String buttonKey, SelectionAdapter selectionListener) {
@@ -191,6 +200,7 @@ public class GlobalValidatorsWizardPage extends WizardPage {
         for (ValidatorConfig config : validatorConfigs) {
             globalConfigsMap.put(config.getType() + discrimination++, config);
         }
+        setDirty(false);
     }
 
     public class DefaultValidatorInfoControl extends ValidatorInfoControl {
@@ -198,6 +208,12 @@ public class GlobalValidatorsWizardPage extends WizardPage {
 
         public DefaultValidatorInfoControl(Composite parent) {
             super(parent, false);
+            errorMessageText.addModifyListener(new ModifyListener() {
+                @Override
+                public void modifyText(ModifyEvent e) {
+                    setDirty(true);
+                }
+            });
             if (formNode.getLeavingTransitions().size() > 1) {
                 Group transitionsGroup = new Group(this, SWT.BORDER);
                 transitionsGroup.setLayoutData(new GridData(GridData.FILL_HORIZONTAL));
@@ -298,12 +314,19 @@ public class GlobalValidatorsWizardPage extends WizardPage {
                         variable1 = VariableUtils.getVariableByScriptingName(variables, result);
                         txtVarName1.setText(variable1.getScriptingName());
                         refreshCombos();
+                        setDirty(true);
                     }
                 }
             });
 
             comboBoxOp = new Combo(constrComposite, SWT.READ_ONLY);
             comboBoxOp.setLayoutData(getComboGridData());
+            comboBoxOp.addModifyListener(new ModifyListener() {
+                @Override
+                public void modifyText(ModifyEvent e) {
+                    setDirty(true);
+                }
+            });
 
             Composite varComposite2 = new Composite(constrComposite, SWT.NONE);
             varComposite2.setLayoutData(getComboGridData());
@@ -320,6 +343,7 @@ public class GlobalValidatorsWizardPage extends WizardPage {
                     if (result != null) {
                         varName2 = result;
                         txtVarName2.setText(varName2);
+                        setDirty(true);
                     }
                 }
             });
@@ -403,6 +427,12 @@ public class GlobalValidatorsWizardPage extends WizardPage {
                     FeaturedStyledText.Feature.LINE_NUMBER, FeaturedStyledText.Feature.UNDO_REDO));
             codeText.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true, 5, 1));
             codeText.addLineStyleListener(new JavaHighlightTextStyling(contextVariableNames));
+            codeText.addModifyListener(new ModifyListener() {
+                @Override
+                public void modifyText(ModifyEvent e) {
+                    setDirty(true);
+                }
+            });
         }
 
         private GridData getComboGridData() {
@@ -486,6 +516,41 @@ public class GlobalValidatorsWizardPage extends WizardPage {
                 config.getParams().remove(ValidatorDefinition.EXPRESSION_PARAM_NAME);
             }
         }
+    }
+
+    public void setMarkEditorDirtyCallback(Consumer<Boolean> callback) {
+        dirtyCallback = callback;
+    }
+
+    private void setDirty(boolean dirty) {
+        if (this.dirty != dirty) {
+            this.dirty = dirty;
+            Optional.ofNullable(dirtyCallback).orElse(p -> {}).accept(dirty);
+        }
+    }
+
+    public boolean isDirty() {
+        return dirty;
+    }
+
+    @Override
+    public void propertyChange(PropertyChangeEvent evt) {
+        if (PropertyNames.PROPERTY_CHILDREN_CHANGED.equals(evt.getPropertyName())) {
+            updateVariableNames();
+        }
+    }
+
+    private void updateVariableNames() {
+        variables = formNode.getProcessDefinition().getVariables(true, true);
+        variableNames = VariableUtils.getVariableNamesForScripting(variables);
+        contextVariableNames = Lists.newArrayList(variableNames);
+        contextVariableNames.add(WfProcess.SELECTED_TRANSITION_KEY);
+    }
+
+    @Override
+    public void dispose() {
+        formNode.getProcessDefinition().removePropertyChangeListener(this);
+        super.dispose();
     }
 
 }
