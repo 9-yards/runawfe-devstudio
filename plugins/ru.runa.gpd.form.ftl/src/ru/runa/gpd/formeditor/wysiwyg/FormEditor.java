@@ -17,6 +17,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.eclipse.core.resources.IFile;
 import org.eclipse.core.resources.IFolder;
+import org.eclipse.core.resources.IResource;
 import org.eclipse.core.resources.IResourceChangeEvent;
 import org.eclipse.core.resources.IResourceChangeListener;
 import org.eclipse.core.resources.ResourcesPlugin;
@@ -76,7 +77,6 @@ import ru.runa.gpd.ui.view.SelectionProvider;
 import ru.runa.gpd.util.EditorUtils;
 import ru.runa.gpd.util.IOUtils;
 import ru.runa.gpd.util.VariableUtils;
-import ru.runa.gpd.validation.ValidationUtil;
 import ru.runa.wfe.InternalApplicationException;
 
 /**
@@ -113,6 +113,19 @@ public class FormEditor extends MultiPageEditorPart implements IResourceChangeLi
 
     protected synchronized void setBrowserLoaded(boolean browserLoaded) {
         this.browserLoaded = browserLoaded;
+    }
+
+    @Override
+    protected void setInput(IEditorInput input) {
+        try {
+            IResource inputFile = ((FileEditorInput) input).getFile();
+            if (!inputFile.isSynchronized(IResource.DEPTH_ZERO)) {
+                inputFile.refreshLocal(IResource.DEPTH_ZERO, null);
+            }
+        } catch (CoreException e) {
+            PluginLogger.logError(e);
+        }
+        super.setInput(input);
     }
 
     @Override
@@ -155,8 +168,6 @@ public class FormEditor extends MultiPageEditorPart implements IResourceChangeLi
                             } catch (CoreException e) {
                                 PluginLogger.logError(e);
                             }
-                        } else {
-                            ValidationUtil.createOrUpdateValidation(formNode, formFile);
                         }
                     }
                     boolean formEditorsAvailable = false;
@@ -385,12 +396,6 @@ public class FormEditor extends MultiPageEditorPart implements IResourceChangeLi
             }
         }
         sourceEditor.doSave(monitor);
-        if (formNode != null) {
-            if (formFile.exists() && !IOUtils.isEmpty(formFile)) {
-                formNode.setDirty();
-                ValidationUtil.createOrUpdateValidation(formNode, formFile);
-            }
-        }
         if (isBrowserLoaded()) {
             browser.execute("setHTMLSaved()");
         }
@@ -417,11 +422,11 @@ public class FormEditor extends MultiPageEditorPart implements IResourceChangeLi
     @Override
     protected void pageChange(int newPageIndex) {
         if (isBrowserLoaded()) {
-            if (newPageIndex == 1) {
-                syncBrowser2Editor();
-            } else if (newPageIndex == 0) {
+            if (newPageIndex == 0) {
                 ConnectorServletHelper.sync();
                 syncEditor2Browser();
+            } else {
+                syncBrowser2Editor();
             }
         } else if (EditorsPlugin.DEBUG) {
             PluginLogger.logInfo("pageChange to = " + newPageIndex + " but editor is not loaded yet");
@@ -485,7 +490,7 @@ public class FormEditor extends MultiPageEditorPart implements IResourceChangeLi
         }
     }
 
-    private String getSourceDocumentHTML() {
+    protected String getSourceDocumentHTML() {
         return sourceEditor.getDocumentProvider().getDocument(sourceEditor.getEditorInput()).get();
     }
 
